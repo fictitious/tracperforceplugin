@@ -26,9 +26,9 @@ def rootPath(connection):
     Otherwise we start from the very top.
     """
     if connection.client != NO_CLIENT:
-        return '//%s/...' % connection.client
+        return '//%s/' % connection.client
     else:
-        return '//...'
+        return '//'
 
 def normalisePath(path):
     """Normalise a Perforce path and return it as a Trac-compatible path.
@@ -301,8 +301,10 @@ class PerforceRepository(Repository):
 
         from p4trac.repos import P4ChangesOutputConsumer
         output = P4ChangesOutputConsumer(self._repos)
+        queryPath = '%s...@<%i' % (rootPath(self._connection), rev)
+        self.log.debug('p4 changes -l -s submitted -m 1 %s' % queryPath)
         self._connection.run('changes', '-l', '-s', 'submitted',
-                             '-m', '1', '@<%i' % rev, output=output)
+                             '-m', '1', queryPath, output=output)
         if output.errors:
             from p4trac.repos import PerforceError
             raise PerforceError(output.errors)
@@ -323,21 +325,19 @@ class PerforceRepository(Repository):
 
         from p4trac.repos import P4NodePath
         if not path:
-            path = u'//'
+            queryPath = u'...'
         else:
             path = P4NodePath.normalisePath(path)
-        node = self._repos.getNode(P4NodePath(path, rev))
-        self.log.debug(u'node : %i %i %s' % (node.isDirectory, node.nodePath.isRoot, node.nodePath.path))
+            node = self._repos.getNode(P4NodePath(path, rev))
+            self.log.debug(u'node : %i %i %s' % (node.isDirectory, node.nodePath.isRoot, node.nodePath.path))
 
-        if node.isDirectory:
-            if node.nodePath.isRoot:
-                # Handle the root path specially since it encompasses all
-                # changes and so can use the repository's internal cache.
-                return self._repos.getNextChange(int(rev))
+            if node.isDirectory:
+                if node.nodePath.isRoot:
+                    queryPath = u'...'
+                else:
+                    queryPath = u'%s/...' % node.nodePath.path
             else:
-                queryPath = u'%s/...' % node.nodePath.path
-        else:
-            queryPath = node.nodePath.path
+                queryPath = node.nodePath.path
 
         queryPath = self._repos.fromUnicode(queryPath)
         self.log.debug(u'Looking for next_rev after change %i for %s' % (rev, path))
@@ -364,6 +364,7 @@ class PerforceRepository(Repository):
             output = P4ChangesOutputConsumer(self._repos)
             depot_path = '%s%s@>=%i,@<=%i' % (rootPath(self._connection),
                                               queryPath, lowerBound, batchUpperBound)
+            self.log.debug(u'p4 changes -l -s submitted -m %s %s' % (batchSize, depot_path))
             self._connection.run('changes', '-l', '-s', 'submitted',
                                  '-m', str(batchSize),
                                  depot_path, output=output)
@@ -492,13 +493,13 @@ class PerforceRepository(Repository):
 
         if newNode.isDirectory or oldNode.isDirectory:
             if oldNodePath.isRoot:
-                oldQueryPath = u'%s%s' % (rootPath(self._connection),
+                oldQueryPath = u'%s...%s' % (rootPath(self._connection),
                                           oldNodePath.rev)
             else:
                 oldQueryPath = u'%s/...%s' % (oldNodePath.path,
                                              oldNodePath.rev)
             if newNodePath.isRoot:
-                newQueryPath = u'%s%s' % (rootPath(self._connection),
+                newQueryPath = u'%s...%s' % (rootPath(self._connection),
                                           newNodePath.rev)
             else:
                 newQueryPath = u'%s/...%s' % (newNodePath.path,
@@ -512,6 +513,8 @@ class PerforceRepository(Repository):
         from p4trac.repos import P4Diff2OutputConsumer
         output = P4Diff2OutputConsumer(self._repos)
 
+        self.log.debug('p4 diff2 -ds %s %s' % (oldQueryPath, newQueryPath))
+        
         self._connection.run('diff2', '-ds',
                              self._repos.fromUnicode(oldQueryPath),
                              self._repos.fromUnicode(newQueryPath),
@@ -656,10 +659,14 @@ class PerforceNode(Node):
             output = P4ChangesOutputConsumer(self._repos)
 
             if self._nodePath.isRoot:
-                queryPath = '@<=%s' % self._nodePath.rev[1:]
+                queryPath = rootPath(self._repos._connection)
             else:
-                queryPath = '%s/...@<=%s' % (self._nodePath.path, self._nodePath.rev[1:])
+                queryPath = self._nodePath.path + '/'
+                
+            queryPath = '%s...@<=%s' % (queryPath, self._nodePath.rev[1:])
 
+            self._log.debug('p4 changes -l -s submitted %s' % queryPath)
+            
             if limit is None:
                 self._repos._connection.run('changes', '-l', '-s', 'submitted',
                                             self._repos.fromUnicode(queryPath),
@@ -788,7 +795,7 @@ class PerforceChangeset(Changeset):
     def get_changes(self):
         # Force population of the file history for the files modified in this
         # changelist.
-        self._log.debug("PerforceChangeset(%i).get_changes()" % self._change)
+        self._log.debug("PerforceChangeset(%i).()" % self._change)
         self._repos.precacheFileInformationForChanges([self._change])
 
         for node in self._changelist.nodes:

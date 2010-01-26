@@ -823,16 +823,9 @@ class _P4Node(object):
 
         subdirNodes = []
         for subdir in dirInfo.subdirs:
-            if self._nodePath.isRoot:
-                if self._repo._connection.client != NO_CLIENT:
-                    nodePath = P4NodePath(u'//%s/%s' % (self._repo._connection.client, subdir),
-                                          self._nodePath.rev)
-                else:
-                    nodePath = P4NodePath(u'//%s' % subdir,
-                                          self._nodePath.rev)
-            else:
-                nodePath = P4NodePath(u'%s/%s' % (self._nodePath.path, subdir),
-                                      self._nodePath.rev)
+            # subdirs returned by _runDirs are absolute paths
+            nodePath = P4NodePath(subdir,
+                                  self._nodePath.rev)
 
             self._repo._log.debug("_P4Node._get_subDirectories '%s'" % (nodePath._path))
             node = _P4Node(nodePath, self._repo)
@@ -1375,9 +1368,7 @@ class P4Repository(object):
             dirInfo = self._getDirInfo(nodePath,
                                        create=output.dirs)
             if dirInfo is not None:
-                dirInfo.subdirs = [np.leaf for np in output.dirs]
-                if self._connection.client != NO_CLIENT:
-                    dirInfo.path = u'//%s/' % self._connection.client
+                dirInfo.subdirs = [np.path for np in output.dirs]
                 self._log.debug("sub dirs '%s %s %s %s' " % (dirInfo.path, dirInfo.subdirs, dirInfo.files, dirInfo.change))
         if output.errors:
             raise PerforceError(output.errors)
