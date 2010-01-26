@@ -772,9 +772,13 @@ class PerforceChangeset(Changeset):
             props = {}
             fixes = ''
             for record in results.records:
-                tktid = int(record['Job'][self._job_prefix_length:])
-                self._log.debug("get_properties  %d " % tktid)
-                fixes += ' %d' % tktid
+                try:
+                    tktid = int(record['Job'][self._job_prefix_length:])
+                except ValueError:
+                    tktid = None
+                if tktid != None:
+                    self._log.debug("get_properties  %d " % tktid)
+                    fixes += ' %d' % tktid
             if fixes != '':
                 props['Tickets'] = to_unicode(fixes)
             return props
